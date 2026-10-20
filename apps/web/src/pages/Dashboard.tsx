@@ -5,26 +5,16 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { NoProject } from '../components/NoProject';
-import { RainDrops } from '../components/RainDrops';
 import { Empty, ErrorNote, PageHeader, Spinner } from '../components/ui';
 import { useProject } from '../project';
 import type { DashboardData } from '../types';
 import { currentMonth, formatDate, formatMm, monthBounds, monthLabel, shiftMonth, timeAgo, todayISO } from '../utils';
 
-/** nível 0..4 pela precipitação (tons de azul, estilo painel do GitHub) */
-function rainLevel(mm: number): number {
-  if (mm <= 0) return 0;
-  if (mm < 5) return 1;
-  if (mm < 15) return 2;
-  if (mm < 30) return 3;
-  return 4;
-}
-
-/** Mini heatmap do mês: um quadradinho por dia. O widget inteiro leva ao controle de chuvas. */
-function MonthHeatmap({ month, daily }: { month: string; daily: { date: string; mm: number }[] }) {
+/** Mini heatmap do mês: um quadradinho por dia, colorido pela condição. Leva ao controle de chuvas. */
+function MonthHeatmap({ month, daily }: { month: string; daily: DashboardData['rain']['daily'] }) {
   const navigate = useNavigate();
   const { days } = monthBounds(month);
-  const byDay = new Map(daily.map((d) => [Number(d.date.slice(8, 10)), d.mm]));
+  const byDay = new Map(daily.map((d) => [Number(d.date.slice(8, 10)), d.condition]));
   const today = todayISO();
 
   return (
@@ -32,9 +22,14 @@ function MonthHeatmap({ month, daily }: { month: string; daily: { date: string; 
       <div className="mh-grid">
         {Array.from({ length: days }, (_, i) => i + 1).map((n) => {
           const date = `${month}-${String(n).padStart(2, '0')}`;
-          const mm = byDay.get(n) ?? 0;
+          const cond = byDay.get(n);
           const future = date > today;
-          return <span key={n} className={`mh-cell level-${rainLevel(mm)} ${date === today ? 'today' : ''} ${future ? 'future' : ''}`} />;
+          return (
+            <span
+              key={n}
+              className={`mh-cell ${cond ? `cond-${cond}` : ''} ${date === today ? 'today' : ''} ${future ? 'future' : ''}`}
+            />
+          );
         })}
       </div>
     </button>
@@ -44,7 +39,6 @@ function MonthHeatmap({ month, daily }: { month: string; daily: { date: string; 
 function StatCard({ icon, label, value, hint, tone }: { icon: ReactNode; label: string; value: string; hint?: string; tone?: 'accent' | 'rain' }) {
   return (
     <div className={`card stat ${tone ? `stat-${tone}` : ''}`}>
-      {tone === 'rain' && <RainDrops />}
       <div className="stat-icon">{icon}</div>
       <span className="stat-label">{label}</span>
       <strong className="stat-value">{value}</strong>
@@ -97,7 +91,7 @@ export function DashboardPage() {
             <StatCard icon={<Images size={20} />} label="Fotos no mês" value={String(data.photos.month)} hint={`${data.photos.total} no total`} tone="accent" />
             <StatCard icon={<NotebookPen size={20} />} label="Registros no diário" value={String(data.diary.month)} hint={`${data.diary.total} no total`} />
             <StatCard icon={<CloudRain size={20} />} label="Dias com chuva" value={String(data.rain.rainyDays)} hint="no mês selecionado" />
-            <StatCard icon={<Droplets size={20} />} label="Chuva acumulada" value={formatMm(data.rain.totalMm)} hint="no mês selecionado" tone="rain" />
+            <StatCard icon={<Droplets size={20} />} label="Chuva acumulada" value={formatMm(data.rain.totalMm)} hint="no mês selecionado" />
           </div>
 
           <section className="card">

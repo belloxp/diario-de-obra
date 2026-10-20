@@ -29,8 +29,12 @@
   --tooltip-bg: #1f232b;
   --tooltip-ink: #ffffff;
   --menu-shadow: 0 16px 40px rgba(16, 18, 22, 0.18);
-  /* gradiente azul da chuva — usado no card e nos dias do calendário */
-  --rain-grad: linear-gradient(165deg, #3b82f6 0%, #1d4ed8 60%, #1e3a8a 100%);
+  /* condições do dia: chuva (vermelho), impraticável (amarelo), tempo bom (azul) */
+  --cond-rain: #dc2626;
+  --cond-impractical: #f59e0b;
+  --cond-good: #2563eb;
+  --cond-rain-grad: linear-gradient(165deg, #ef4444 0%, #dc2626 55%, #991b1b 100%);
+  --rain-grad: var(--cond-rain-grad);
   /* escala de azul do heatmap de chuva (estilo painel do GitHub) */
   --hm-0: #eaecef;
   --hm-1: #bcd8ff;
@@ -239,6 +243,41 @@ input[type='checkbox'] {
   display: flex;
   gap: 10px;
   margin-bottom: 14px;
+}
+
+/* seletor segmentado (condição do dia) */
+.seg {
+  display: flex;
+  gap: 6px;
+}
+.seg-btn {
+  flex: 1;
+  padding: 9px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.seg-btn:hover {
+  border-color: var(--muted);
+}
+.seg-btn.active {
+  color: #fff;
+  border-color: transparent;
+}
+.seg-btn.seg-rain.active {
+  background: var(--cond-rain);
+}
+.seg-btn.seg-impractical.active {
+  background: var(--cond-impractical);
+  color: #3a2600;
+}
+.seg-btn.seg-good.active {
+  background: var(--cond-good);
 }
 
 /* ---------- Buttons ---------- */
@@ -665,75 +704,6 @@ input[type='checkbox'] {
 .stat-accent .stat-icon {
   background: var(--accent-card-soft);
   color: var(--accent-card-ink);
-}
-/* card de chuva acumulada: fundo azul com chuva caindo */
-.stat-rain {
-  position: relative;
-  overflow: hidden;
-  background: var(--rain-grad);
-  color: #fff;
-  border: none;
-}
-.stat-rain .stat-icon {
-  background: rgba(255, 255, 255, 0.22);
-  color: #fff;
-  position: relative;
-  z-index: 1;
-}
-.stat-rain .stat-label,
-.stat-rain .stat-hint {
-  color: rgba(255, 255, 255, 0.86);
-  position: relative;
-  z-index: 1;
-}
-.stat-rain .stat-value {
-  color: #fff;
-  position: relative;
-  z-index: 1;
-}
-.raindrops {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  overflow: hidden;
-  /* recorta no próprio layer com cantos arredondados — corrige o vazamento das
-     gotas pelos cantos no Safari (overflow:hidden não clipa filhos com transform) */
-  border-radius: inherit;
-  transform: translateZ(0);
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-}
-.raindrops i {
-  position: absolute;
-  top: -18px;
-  width: 2px;
-  border-radius: 2px;
-  background: linear-gradient(to bottom, transparent, var(--rain-drop));
-  animation-name: raindrop;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-  will-change: transform, opacity;
-}
-@keyframes raindrop {
-  0% {
-    transform: translateY(-10%) rotate(14deg);
-    opacity: 0;
-  }
-  12% {
-    opacity: 1;
-  }
-  88% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(1600%) rotate(14deg);
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .raindrops {
-    display: none;
-  }
 }
 .month-nav {
   display: inline-flex;
@@ -1163,6 +1133,18 @@ input[type='checkbox'] {
   background: var(--rain-grad);
   border-color: transparent;
 }
+.swatch-cond-rain {
+  background: var(--cond-rain);
+  border-color: transparent;
+}
+.swatch-cond-impractical {
+  background: var(--cond-impractical);
+  border-color: transparent;
+}
+.swatch-cond-good {
+  background: var(--cond-good);
+  border-color: transparent;
+}
 .calendar {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
@@ -1207,6 +1189,21 @@ input[type='checkbox'] {
 }
 .cal-cell.rain {
   background: var(--rain-grad);
+  border-color: transparent;
+  color: #fff;
+}
+.cal-cell.cond-rain {
+  background: var(--cond-rain);
+  border-color: transparent;
+  color: #fff;
+}
+.cal-cell.cond-impractical {
+  background: var(--cond-impractical);
+  border-color: transparent;
+  color: #3a2600;
+}
+.cal-cell.cond-good {
+  background: var(--cond-good);
   border-color: transparent;
   color: #fff;
 }
@@ -1449,6 +1446,15 @@ input[type='checkbox'] {
 }
 .mh-cell.level-4 {
   background: var(--hm-4);
+}
+.mh-cell.cond-rain {
+  background: var(--cond-rain);
+}
+.mh-cell.cond-impractical {
+  background: var(--cond-impractical);
+}
+.mh-cell.cond-good {
+  background: var(--cond-good);
 }
 .mh-cell.today {
   outline: 2px solid var(--ink);

@@ -4,13 +4,19 @@ import { useState } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { NoProject } from '../components/NoProject';
-import { RainDrops } from '../components/RainDrops';
 import { ErrorNote, Modal, PageHeader, Spinner } from '../components/ui';
 import { useProject } from '../project';
-import type { RainRecord } from '../types';
-import { currentMonth, formatDate, formatDateLong, formatDateTime, formatMm, monthBounds, monthLabel, shiftMonth, todayISO } from '../utils';
+import type { RainCondition, RainRecord } from '../types';
+import { currentMonth, formatDateLong, formatDateTime, formatMm, monthBounds, monthLabel, shiftMonth, todayISO } from '../utils';
 
 const WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
+const CONDITIONS: { value: RainCondition; label: string }[] = [
+  { value: 'rain', label: 'Chuva' },
+  { value: 'impractical', label: 'Impraticável' },
+  { value: 'good', label: 'Tempo bom' },
+];
+const CONDITION_LABEL: Record<RainCondition, string> = { rain: 'Chuva', impractical: 'Impraticável', good: 'Tempo bom' };
 
 export function RainPage() {
   const { project, loading } = useProject();
@@ -30,9 +36,9 @@ export function RainPage() {
 
   const records = data?.records ?? [];
   const byDate = new Map(records.map((r) => [r.record_date, r]));
-  const rainy = records.filter((r) => r.mm > 0);
+  const rainy = records.filter((r) => r.condition === 'rain');
+  const impracticalDays = records.filter((r) => r.condition === 'impractical').length;
   const total = Math.round(rainy.reduce((s, r) => s + r.mm, 0) * 10) / 10;
-  const peak = rainy.reduce<RainRecord | null>((m, r) => (!m || r.mm > m.mm ? r : m), null);
 
   const firstWeekday = new Date(`${from}T12:00:00Z`).getUTCDay();
   const cells: (number | null)[] = [...Array(firstWeekday).fill(null), ...Array.from({ length: days }, (_, i) => i + 1)];
@@ -42,7 +48,7 @@ export function RainPage() {
     <>
       <PageHeader
         title="Controle pluviométrico"
-        subtitle="Toque em um dia para marcar a chuva (em mm). Dias sem marcação contam como sem chuva."
+        subtitle="Toque em um dia para classificar: chuva, dia impraticável ou tempo bom."
         actions={
           <button className="btn btn-ghost" onClick={() => setExporting(true)}>
             <Download size={18} /> Exportar planilha
@@ -51,22 +57,22 @@ export function RainPage() {
       />
 
       <div className="stats stats-3">
-        <div className="card stat stat-rain">
-          <RainDrops />
+        <div className="card stat">
           <div className="stat-icon">
             <Droplets size={20} />
           </div>
           <span className="stat-label">Chuva acumulada</span>
           <strong className="stat-value">{formatMm(total)}</strong>
+          <span className="stat-hint">{rainy.length} dia(s) de chuva</span>
         </div>
         <div className="card stat">
           <span className="stat-label">Dias com chuva</span>
           <strong className="stat-value">{rainy.length}</strong>
         </div>
         <div className="card stat">
-          <span className="stat-label">Maior precipitação</span>
-          <strong className="stat-value">{peak ? formatMm(peak.mm) : '—'}</strong>
-          {peak && <span className="stat-hint">{formatDate(peak.record_date)}</span>}
+          <span className="stat-label">Dias impraticáveis</span>
+          <strong className="stat-value">{impracticalDays}</strong>
+          <span className="stat-hint">não choveu, mas sem condição de trabalho</span>
         </div>
       </div>
 
@@ -83,10 +89,13 @@ export function RainPage() {
           </div>
           <div className="legend">
             <span>
-              <i className="swatch swatch-rain" /> Choveu
+              <i className="swatch swatch-cond-rain" /> Chuva
             </span>
             <span>
-              <i className="swatch" /> Sem chuva
+              <i className="swatch swatch-cond-impractical" /> Impraticável
+            </span>
+            <span>
+              <i className="swatch swatch-cond-good" /> Tempo bom
             </span>
           </div>
         </div>
@@ -105,19 +114,23 @@ export function RainPage() {
               if (n === null) return <div key={`e${i}`} className="cal-cell empty-cell" />;
               const date = `${month}-${String(n).padStart(2, '0')}`;
               const rec = byDate.get(date);
-              const rained = !!rec && rec.mm > 0;
+              const cond = rec?.condition;
               const future = date > today;
+              const tip = rec
+                ? `${CONDITION_LABEL[cond!]}${cond === 'rain' ? ` · ${formatMm(rec.mm)}` : ''}${
+                    rec.created_by_name ? ` — ${rec.created_by_name}` : ''
+                  }`
+                : undefined;
               return (
                 <button
                   key={date}
-                  className={`cal-cell ${rained ? 'rain' : ''} ${date === today ? 'today' : ''}`}
+                  className={`cal-cell ${cond ? `cond-${cond}` : ''} ${date === today ? 'today' : ''}`}
                   disabled={future}
                   onClick={() => setDay(date)}
-                  data-tip={rec ? `${formatMm(rec.mm)}${rec.created_by_name ? ` — ${rec.created_by_name}` : ''}` : undefined}
+                  data-tip={tip}
                 >
-                  {rained && <RainDrops count={12} />}
                   <span className="cal-day">{n}</span>
-                  {rained && <span className="cal-mm">{formatMm(rec.mm)}</span>}
+                  {cond === 'rain' && <span className="cal-mm">{formatMm(rec!.mm)}</span>}
                 </button>
               );
             })}
@@ -134,6 +147,7 @@ export function RainPage() {
 function DayModal({ projectId, date, record, onClose }: { projectId: string; date: string; record: RainRecord | null; onClose: () => void }) {
   const qc = useQueryClient();
   const { user } = useAuth();
+  const [condition, setCondition] = useState<RainCondition>(record?.condition ?? 'rain');
   const [mm, setMm] = useState(record ? String(record.mm).replace('.', ',') : '');
   const [note, setNote] = useState(record?.note ?? '');
 
@@ -143,10 +157,18 @@ function DayModal({ projectId, date, record, onClose }: { projectId: string; dat
     onClose();
   };
   const value = Number(mm.replace(',', '.'));
-  const valid = mm.trim() !== '' && Number.isFinite(value) && value >= 0 && value <= 1000;
+  const mmValid = mm.trim() !== '' && Number.isFinite(value) && value >= 0 && value <= 1000;
+  const valid = condition === 'rain' ? mmValid : true;
 
   const save = useMutation({
-    mutationFn: () => api.put('/rain', { projectId, recordDate: date, mm: Math.round(value * 10) / 10, note }),
+    mutationFn: () =>
+      api.put('/rain', {
+        projectId,
+        recordDate: date,
+        condition,
+        mm: condition === 'rain' ? Math.round(value * 10) / 10 : 0,
+        note,
+      }),
     onSuccess: refresh,
   });
   const remove = useMutation({ mutationFn: () => api.del(`/rain/${record!.id}`), onSuccess: refresh });
@@ -174,11 +196,27 @@ function DayModal({ projectId, date, record, onClose }: { projectId: string; dat
       }
     >
       <div className="stack">
-        <label className="field">
-          <span>Precipitação (mm)</span>
-          <input inputMode="decimal" placeholder="0" value={mm} onChange={(e) => setMm(e.target.value)} autoFocus />
-          <small className="muted">Use 0 se não choveu e você quer registrar o dia.</small>
-        </label>
+        <div className="field">
+          <span>Condição do dia</span>
+          <div className="seg">
+            {CONDITIONS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                className={`seg-btn seg-${c.value} ${condition === c.value ? 'active' : ''}`}
+                onClick={() => setCondition(c.value)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {condition === 'rain' && (
+          <label className="field">
+            <span>Precipitação (mm)</span>
+            <input inputMode="decimal" placeholder="0" value={mm} onChange={(e) => setMm(e.target.value)} autoFocus />
+          </label>
+        )}
         <label className="field">
           <span>Observação (opcional)</span>
           <input value={note} maxLength={1000} onChange={(e) => setNote(e.target.value)} placeholder="Ex.: chuva forte à tarde" />
@@ -231,7 +269,10 @@ function ExportModal({ projectId, from: initialFrom, to: initialTo, onClose }: {
       }
     >
       <div className="stack">
-        <p className="muted">A planilha inclui todos os dias do período, com total de chuva e dias com chuva.</p>
+        <p className="muted">
+          A planilha traz todos os dias do período com a condição de cada um (chuva, impraticável, tempo bom) já coloridas, além de
+          mm e totais.
+        </p>
         <div className="row">
           <label className="field">
             <span>De</span>
