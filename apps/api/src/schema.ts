@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS rain_records (
   project_id  uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   record_date date NOT NULL,
   mm          numeric(6,1) NOT NULL CHECK (mm >= 0),
+  condition   text NOT NULL DEFAULT 'rain',
   note        text NOT NULL DEFAULT '',
   created_by  uuid NOT NULL REFERENCES users(id),
   updated_by  uuid REFERENCES users(id),
@@ -71,6 +72,8 @@ CREATE TABLE IF NOT EXISTS rain_records (
   updated_at  timestamptz NOT NULL DEFAULT now(),
   UNIQUE (project_id, record_date)
 );
+-- condição do dia: 'rain' (chuva), 'impractical' (impraticável), 'good' (tempo bom)
+ALTER TABLE rain_records ADD COLUMN IF NOT EXISTS condition text NOT NULL DEFAULT 'rain';
 
 CREATE TABLE IF NOT EXISTS activity_log (
   id          bigserial PRIMARY KEY,
@@ -94,6 +97,8 @@ CREATE TABLE IF NOT EXISTS reports (
   period_from      date NOT NULL,
   period_to        date NOT NULL,
   show_state       boolean NOT NULL DEFAULT true,
+  state_mode       text NOT NULL DEFAULT 'sc',
+  state_logo       bytea,
   status           text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'pending_signature', 'signed')),
   zapsign_token    text,
   zapsign_sign_url text,
@@ -104,6 +109,9 @@ CREATE TABLE IF NOT EXISTS reports (
   UNIQUE (project_id, number)
 );
 CREATE INDEX IF NOT EXISTS reports_project_idx ON reports (project_id, number DESC);
+-- colunas adicionadas depois (bancos já existentes)
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS state_mode text NOT NULL DEFAULT 'sc';
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS state_logo bytea;
 `;
 
 export const DEFAULT_CATEGORIES = [
