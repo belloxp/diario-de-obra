@@ -31,8 +31,8 @@ export async function dashboardRoutes(app: FastifyInstance) {
          FROM diary_entries WHERE project_id = $1`,
         [q.projectId, from, to],
       ),
-      query<{ date: string; mm: number }>(
-        `SELECT record_date AS date, mm FROM rain_records
+      query<{ date: string; mm: number; condition: string }>(
+        `SELECT record_date AS date, mm, condition FROM rain_records
          WHERE project_id = $1 AND record_date BETWEEN $2 AND $3 ORDER BY record_date`,
         [q.projectId, from, to],
       ),
