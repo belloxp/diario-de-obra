@@ -1,0 +1,13 @@
+{
+  "name": "diario-de-obra",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Diário de obra: relatório fotográfico, diário e controle pluviométrico",
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web"
+  }
+}
