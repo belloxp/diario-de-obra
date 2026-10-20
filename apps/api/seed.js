@@ -179,8 +179,8 @@ async function main() {
   }
 
   // --- controle pluviométrico (ano inteiro, do 1º de janeiro até hoje) ---
-  // Espalha chuva pelo ano com níveis variados, pra o heatmap (estilo GitHub)
-  // mostrar todos os tons de azul. Mais úmido no verão do Sul (jan–mar, out–dez).
+  // Classifica cada dia em: chuva (vermelho), impraticável (amarelo, após chuva
+  // forte) ou tempo bom (azul). Mais úmido no verão do Sul (jan–mar, out–dez).
   console.log('→ Criando registros de chuva…');
   const today = new Date();
   const DAY_MS = 86_400_000;
@@ -196,42 +196,56 @@ async function main() {
   const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
   const daysAgoFrom = (t) => Math.round((todayEnd - t) / DAY_MS);
 
+  let prevHeavy = false;
   for (let t = yearStart; t <= todayEnd; t += DAY_MS) {
     const base = new Date(t);
     const m = base.getMonth();
-    if (rand() > wet[m]) continue; // dia sem chuva
-    const roll = rand();
-    // distribui entre leve/moderada/forte/muito forte para cobrir os 4 níveis
-    let mm;
-    if (roll < 0.45) mm = 0.5 + rand() * 4.5; // 0,5–5  (nível 1)
-    else if (roll < 0.75) mm = 5 + rand() * 10; // 5–15  (nível 2)
-    else if (roll < 0.92) mm = 15 + rand() * 15; // 15–30 (nível 3)
-    else mm = 30 + rand() * 35; // 30–65 (nível 4)
-    mm = Math.round(mm * 10) / 10;
     const d = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 18, 0, 0);
     const user = base.getDate() % 2 === 0 ? carlos : fernanda;
-    const note = mm >= 30 ? 'Chuva forte, obra paralisada parte do dia.' : mm >= 10 ? 'Chuva moderada.' : 'Chuva leve.';
+
+    let condition = null;
+    let mm = 0;
+    let note = '';
+    if (rand() <= wet[m]) {
+      const roll = rand();
+      if (roll < 0.45) mm = 0.5 + rand() * 4.5;
+      else if (roll < 0.75) mm = 5 + rand() * 10;
+      else if (roll < 0.92) mm = 15 + rand() * 15;
+      else mm = 30 + rand() * 35;
+      mm = Math.round(mm * 10) / 10;
+      condition = 'rain';
+      note = mm >= 30 ? 'Chuva forte, obra paralisada parte do dia.' : mm >= 10 ? 'Chuva moderada.' : 'Chuva leve.';
+    } else if (prevHeavy && rand() < 0.7) {
+      condition = 'impractical';
+      note = 'Sem condição de trabalho pela chuva do dia anterior.';
+    } else if (rand() < 0.4) {
+      condition = 'good';
+    }
+    prevHeavy = condition === 'rain' && mm >= 20;
+    if (!condition) continue;
+
     const row = await one(
-      `INSERT INTO rain_records (project_id, record_date, mm, note, created_by, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING id`,
-      [obra1.id, ymd(d), mm, note, user.id, iso(d)],
+      `INSERT INTO rain_records (project_id, record_date, mm, condition, note, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+      [obra1.id, ymd(d), mm, condition, note, user.id, iso(d)],
     );
     // registra atividade só nos últimos 14 dias, pra não inundar o feed
     if (daysAgoFrom(t) <= 14) {
-      log(user.id, 'rain.create', 'rain', row.id, `Marcou ${mm} mm de chuva em ${ymd(d).split('-').reverse().join('/')}`, d, {
+      const label = condition === 'rain' ? `${mm} mm de chuva` : condition === 'impractical' ? 'dia impraticável' : 'tempo bom';
+      log(user.id, 'rain.create', 'rain', row.id, `Marcou ${label} em ${ymd(d).split('-').reverse().join('/')}`, d, {
         projectId: obra1.id,
       });
     }
   }
 
-  // alguns registros de chuva na segunda obra também (mês corrente)
-  for (const [day, mm] of [[5, 8.0], [6, 15.0], [13, 22.0]]) {
+  // alguns registros na segunda obra também (mês corrente)
+  for (const [day, mm, condition] of [[5, 8.0, 'rain'], [6, 15.0, 'rain'], [7, 0, 'impractical'], [13, 0, 'good']]) {
     if (day > today.getDate()) continue;
     const d = new Date(today.getFullYear(), today.getMonth(), day, 18, 0, 0);
     await q(
-      `INSERT INTO rain_records (project_id, record_date, mm, note, created_by, created_at, updated_at)
-       VALUES ($1,$2,$3,'',$4,$5,$5) ON CONFLICT DO NOTHING`,
-      [obra2.id, ymd(d), mm, carlos.id, iso(d)],
+      `INSERT INTO rain_records (project_id, record_date, mm, condition, note, created_by, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,'',$5,$6,$6) ON CONFLICT DO NOTHING`,
+      [obra2.id, ymd(d), mm, condition, carlos.id, iso(d)],
     );
   }
 
