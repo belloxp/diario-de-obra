@@ -16,13 +16,16 @@ const STATE_HEADER = 'GOVERNO DO ESTADO DE SANTA CATARINA';
 const JB_LOGO = new URL('../../web/public/brand/logo-black.png', import.meta.url);
 const SC_LOGO = new URL('../../web/public/brand/estado-sc.png', import.meta.url);
 
+export type StateMode = 'sc' | 'none' | 'custom';
+
 export interface ReportData {
   number: number;
   title: string;
   contract_number: string | null;
   period_from: string;
   period_to: string;
-  show_state: boolean;
+  state_mode: StateMode;
+  state_logo: Buffer | null;
   project_name: string;
   status: string;
   signed_at: string | null;
@@ -71,20 +74,27 @@ function drawScPlaceholder(doc: PDFKit.PDFDocument, x: number, y: number, w: num
   doc.restore();
 }
 
-function drawLogos(doc: PDFKit.PDFDocument, logos: { jb: Buffer | null; sc: Buffer | null }, showState: boolean, big: boolean) {
+function drawLogos(
+  doc: PDFKit.PDFDocument,
+  logos: { jb: Buffer | null; sc: Buffer | null },
+  stateMode: StateMode,
+  stateLogo: Buffer | null,
+  big: boolean,
+) {
   const m = doc.page.margins.left;
   const top = m;
   const h = big ? 54 : 38;
   const w = big ? 150 : 110;
-  // SC à esquerda
-  if (showState) {
-    if (logos.sc) {
+  // brasão do estado à esquerda
+  if (stateMode !== 'none') {
+    const stateImg = stateMode === 'custom' ? stateLogo : logos.sc;
+    if (stateImg) {
       try {
-        doc.image(logos.sc, m, top, { fit: [w, h] });
+        doc.image(stateImg, m, top, { fit: [w, h] });
       } catch {
-        drawScPlaceholder(doc, m, top, w * 0.62, h);
+        if (stateMode === 'sc') drawScPlaceholder(doc, m, top, w * 0.62, h);
       }
-    } else {
+    } else if (stateMode === 'sc') {
       drawScPlaceholder(doc, m, top, w * 0.62, h);
     }
   }
@@ -118,7 +128,7 @@ export async function generateReportPdf(report: ReportData, photos: ReportPhoto[
   const CONTENT_W = PAGE_W - M * 2;
 
   // ---------- CAPA ----------
-  drawLogos(doc, logos, report.show_state, true);
+  drawLogos(doc, logos, report.state_mode, report.state_logo, true);
   let y = M + 54 + 30;
 
   const center = (text: string, opts: { size: number; bold?: boolean; gap?: number; color?: string }) => {
@@ -130,7 +140,7 @@ export async function generateReportPdf(report: ReportData, photos: ReportPhoto[
     y = doc.y + (opts.gap ?? 10);
   };
 
-  center(STATE_HEADER, { size: 12, bold: true, gap: 22 });
+  if (report.state_mode === 'sc') center(STATE_HEADER, { size: 12, bold: true, gap: 22 });
   if (report.title) center(report.title.toUpperCase(), { size: 9.5, bold: true, gap: 14 });
   if (report.contract_number) center(`CONTRATO ${report.contract_number}`, { size: 11, bold: true, gap: 40 });
   else y += 26;
@@ -183,7 +193,7 @@ export async function generateReportPdf(report: ReportData, photos: ReportPhoto[
 
   const newPage = () => {
     doc.addPage();
-    return drawLogos(doc, logos, report.show_state, false);
+    return drawLogos(doc, logos, report.state_mode, report.state_logo, false);
   };
 
   if (photos.length > 0) {

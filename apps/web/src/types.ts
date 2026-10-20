@@ -63,11 +63,14 @@ export interface DiaryEntry {
   updated_by_name: string | null;
 }
 
+export type RainCondition = 'rain' | 'impractical' | 'good';
+
 export interface RainRecord {
   id: string;
   project_id: string;
   record_date: string;
   mm: number;
+  condition: RainCondition;
   note: string;
   created_at: string;
   updated_at: string;
@@ -77,6 +80,7 @@ export interface RainRecord {
 }
 
 export type ReportStatus = 'draft' | 'pending_signature' | 'signed';
+export type StateMode = 'sc' | 'none' | 'custom';
 
 export interface Report {
   id: string;
@@ -86,7 +90,8 @@ export interface Report {
   contract_number: string | null;
   period_from: string;
   period_to: string;
-  show_state: boolean;
+  state_mode: StateMode;
+  has_state_logo: boolean;
   status: ReportStatus;
   zapsign_sign_url: string | null;
   signed_at: string | null;
@@ -123,7 +128,7 @@ export interface DashboardData {
   to: string;
   photos: { month: number; total: number };
   diary: { month: number; total: number };
-  rain: { totalMm: number; rainyDays: number; daily: { date: string; mm: number }[] };
+  rain: { totalMm: number; rainyDays: number; daily: { date: string; mm: number; condition: RainCondition }[] };
   photosByCategory: { name: string; count: number }[];
   recentActivity: { id: number; action: string; summary: string; created_at: string; user_name: string | null }[];
 }

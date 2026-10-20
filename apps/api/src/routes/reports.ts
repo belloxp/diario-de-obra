@@ -4,12 +4,13 @@ import { logActivity } from '../activity.js';
 import { config } from '../config.js';
 import { query, queryOne } from '../db.js';
 import { dateStr, HttpError, parse, uuid } from '../http.js';
-import { generateReportPdf, type ReportData, type ReportPhoto } from '../pdf.js';
+import { generateReportPdf, type ReportData, type ReportPhoto, type StateMode } from '../pdf.js';
 import { getDocStatus, mapStatus, sendForSignature } from '../zapsign.js';
 
 const SELECT = `
   SELECT r.id, r.project_id, r.number, r.title, r.contract_number, r.period_from, r.period_to,
-         r.show_state, r.status, r.zapsign_sign_url, r.signed_at, r.created_at, r.created_by,
+         r.state_mode, (r.state_logo IS NOT NULL) AS has_state_logo,
+         r.status, r.zapsign_sign_url, r.signed_at, r.created_at, r.created_by,
          u.name AS created_by_name, pr.name AS project_name,
          (SELECT count(*)::int FROM photos p
           WHERE p.project_id = r.project_id
@@ -27,7 +28,7 @@ type Row = {
   contract_number: string | null;
   period_from: string;
   period_to: string;
-  show_state: boolean;
+  state_mode: StateMode;
   status: string;
   signed_at: string | null;
   project_name: string;
@@ -44,23 +45,32 @@ async function reportPhotos(r: Row): Promise<ReportPhoto[]> {
   );
 }
 
-function toReportData(r: Row): ReportData {
+function toReportData(r: Row, stateLogo: Buffer | null): ReportData {
   return {
     number: r.number,
     title: r.title,
     contract_number: r.contract_number,
     period_from: r.period_from,
     period_to: r.period_to,
-    show_state: r.show_state,
+    state_mode: r.state_mode,
+    state_logo: stateLogo,
     project_name: r.project_name,
     status: r.status,
     signed_at: r.signed_at,
   };
 }
 
+/** Decodifica uma imagem em base64 (aceita data URL) para Buffer. */
+function decodeImage(b64?: string | null): Buffer | null {
+  if (!b64) return null;
+  const raw = b64.includes(',') ? b64.slice(b64.indexOf(',') + 1) : b64;
+  return Buffer.from(raw, 'base64');
+}
+
 async function buildPdf(r: Row): Promise<Buffer> {
+  const extra = await queryOne<{ state_logo: Buffer | null }>('SELECT state_logo FROM reports WHERE id = $1', [r.id]);
   const photos = await reportPhotos(r);
-  return generateReportPdf(toReportData(r), photos);
+  return generateReportPdf(toReportData(r, extra?.state_logo ?? null), photos);
 }
 
 export async function reportRoutes(app: FastifyInstance) {
@@ -87,23 +97,26 @@ export async function reportRoutes(app: FastifyInstance) {
         contractNumber: z.string().max(120).optional(),
         periodFrom: dateStr,
         periodTo: dateStr,
-        showState: z.boolean().default(true),
+        stateMode: z.enum(['sc', 'none', 'custom']).default('sc'),
+        stateLogo: z.string().max(8_000_000).optional(), // base64 (data URL ou cru)
       }),
       req.body,
     );
     if (body.periodFrom > body.periodTo) throw new HttpError(400, 'A data inicial não pode ser maior que a final.');
+    if (body.stateMode === 'custom' && !body.stateLogo) throw new HttpError(400, 'Envie a imagem da bandeira do estado.');
     const project = await queryOne<{ contract_number: string | null }>(
       'SELECT contract_number FROM projects WHERE id = $1',
       [body.projectId],
     );
     if (!project) throw new HttpError(404, 'Obra não encontrada.');
 
+    const stateLogo = body.stateMode === 'custom' ? decodeImage(body.stateLogo) : null;
     const next = await queryOne<{ n: number }>('SELECT COALESCE(MAX(number), 0) + 1 AS n FROM reports WHERE project_id = $1', [
       body.projectId,
     ]);
     const report = await queryOne<Row>(
-      `INSERT INTO reports (project_id, number, title, contract_number, period_from, period_to, show_state, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO reports (project_id, number, title, contract_number, period_from, period_to, show_state, state_mode, state_logo, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
       [
         body.projectId,
         next!.n,
@@ -111,7 +124,9 @@ export async function reportRoutes(app: FastifyInstance) {
         body.contractNumber || project.contract_number || null,
         body.periodFrom,
         body.periodTo,
-        body.showState,
+        body.stateMode !== 'none',
+        body.stateMode,
+        stateLogo,
         req.user.sub,
       ],
     );
@@ -135,7 +150,8 @@ export async function reportRoutes(app: FastifyInstance) {
         contractNumber: z.string().max(120).nullable().optional(),
         periodFrom: dateStr.optional(),
         periodTo: dateStr.optional(),
-        showState: z.boolean().optional(),
+        stateMode: z.enum(['sc', 'none', 'custom']).optional(),
+        stateLogo: z.string().max(8_000_000).nullable().optional(),
       }),
       req.body,
     );
@@ -153,7 +169,15 @@ export async function reportRoutes(app: FastifyInstance) {
     if (body.contractNumber !== undefined) add('contract_number', body.contractNumber || null);
     if (body.periodFrom !== undefined) add('period_from', body.periodFrom);
     if (body.periodTo !== undefined) add('period_to', body.periodTo);
-    if (body.showState !== undefined) add('show_state', body.showState);
+    if (body.stateMode !== undefined) {
+      add('state_mode', body.stateMode);
+      add('show_state', body.stateMode !== 'none');
+      if (body.stateMode === 'custom') {
+        if (body.stateLogo) add('state_logo', decodeImage(body.stateLogo));
+      } else {
+        add('state_logo', null);
+      }
+    }
     params.push(id);
     await query(`UPDATE reports SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
     const full = await queryOne(`${SELECT} WHERE r.id = $1`, [id]);

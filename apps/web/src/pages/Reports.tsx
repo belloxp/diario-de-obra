@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock, Download, ExternalLink, FileText, PenLine, Plus, RefreshCw, Trash2 } from 'lucide-react';
-import { useState } from 'react';
+import { CheckCircle2, Clock, Download, ExternalLink, FileText, ImagePlus, PenLine, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useState, type ChangeEvent } from 'react';
 import { api } from '../api';
 import { useAuth } from '../auth';
 import { CorrectableTextarea } from '../components/CorrectableTextarea';
 import { NoProject } from '../components/NoProject';
+import { Select } from '../components/Select';
 import { Empty, ErrorNote, Modal, PageHeader, Spinner } from '../components/ui';
 import { useProject } from '../project';
-import type { Report } from '../types';
+import type { Report, StateMode } from '../types';
 import { currentMonth, formatDate, formatDateTime, monthBounds } from '../utils';
 
 function StatusBadge({ status }: { status: Report['status'] }) {
@@ -178,8 +179,19 @@ function ReportModal({
   const [from, setFrom] = useState(bounds.from);
   const [to, setTo] = useState(bounds.to);
   const [contract, setContract] = useState(contractNumber ?? '');
-  const [showState, setShowState] = useState(true);
+  const [stateMode, setStateMode] = useState<StateMode>('sc');
+  const [stateLogo, setStateLogo] = useState<string | null>(null);
+  const [logoName, setLogoName] = useState('');
   const [title, setTitle] = useState('');
+
+  function onPickLogo(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLogoName(file.name);
+    const reader = new FileReader();
+    reader.onload = () => setStateLogo(String(reader.result));
+    reader.readAsDataURL(file);
+  }
 
   const save = useMutation({
     mutationFn: () =>
@@ -189,14 +201,15 @@ function ReportModal({
         contractNumber: contract,
         periodFrom: from,
         periodTo: to,
-        showState,
+        stateMode,
+        ...(stateMode === 'custom' && stateLogo ? { stateLogo } : {}),
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['reports'] });
       onClose();
     },
   });
-  const valid = from && to && from <= to;
+  const valid = from && to && from <= to && (stateMode !== 'custom' || !!stateLogo);
 
   return (
     <Modal
@@ -238,10 +251,28 @@ function ReportModal({
             placeholder="Ex.: COORDENAÇÃO, SUPERVISÃO E CONTROLE DE OBRAS RODOVIÁRIAS NA RODOVIA SC-485…"
           />
         </div>
-        <label className="check">
-          <input type="checkbox" checked={showState} onChange={(e) => setShowState(e.target.checked)} />
-          <span>Incluir o brasão de Santa Catarina (SC) na capa e no cabeçalho</span>
-        </label>
+        <div className="field">
+          <span>Brasão do estado (capa e cabeçalho)</span>
+          <Select
+            value={stateMode}
+            onChange={(v) => setStateMode(v as StateMode)}
+            options={[
+              { value: 'sc', label: 'Santa Catarina (SC)' },
+              { value: 'none', label: 'Sem brasão' },
+              { value: 'custom', label: 'Outro estado (enviar imagem)' },
+            ]}
+          />
+          {stateMode === 'custom' && (
+            <div className="stack" style={{ gap: 6, marginTop: 8 }}>
+              <label className="btn btn-ghost btn-sm" style={{ alignSelf: 'flex-start', cursor: 'pointer' }}>
+                <ImagePlus size={15} /> {stateLogo ? 'Trocar imagem' : 'Escolher imagem da bandeira'}
+                <input type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={onPickLogo} />
+              </label>
+              {logoName && <span className="muted small">{logoName}</span>}
+              {!stateLogo && <span className="muted small">Envie um PNG/JPG da bandeira ou brasão do estado.</span>}
+            </div>
+          )}
+        </div>
         <p className="muted small">
           As fotos do período entram automaticamente, agrupadas por categoria. "Geral" aparece sem título; as demais com o título em
           cima.
